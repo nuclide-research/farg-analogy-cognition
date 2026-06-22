@@ -77,27 +77,50 @@ One real overclaim was found and has been corrected (see below).
   wrapped in ```` ```json ```` fences and the parser extracted and validated it
   correctly. So a real model does return parseable rules through this path.
 
-## Live executor-swap observation (claude-haiku vs scripted)
+## Live executor-swap observation, and the freeze-bar fix
 
 Swapping in the real model shifts the answer distribution while the control law is
-unchanged:
+unchanged. At the default freeze bar (0.90):
 
 ```
-  real model (haiku), 30 seeds      offline scripted, 300 seeds
-    yyz  17/30                         wyz  137/300
-    xyy  12/30                         yyz   84/300
-    wyz   1/30                         xyy   79/300
+  real model (haiku), 40 seeds      offline scripted, 300 seeds (deterministic)
+    yyz  21/40                         wyz  143/300
+    xyy  19/40                         xyy   83/300
+    wyz   0/40                         yyz   74/300
 ```
 
 The scripted scout has no clean candidate but the base rule, which always hits the
 `z` wall, so it is forced through the snag that activates `opposite` and yields the
 double-slip `wyz`. The model proactively proposes simpler clean readings (`yyz`,
 `xyy`) at coherence 0.93; those commit and the temperature cools before the base
-rule is ever selected-and-snagged, so `wyz` (reachable only via a snag) nearly
-vanishes. This is a live instance of the false-freeze mode documented in
-`farg-deep-dive.md`, and a clean demonstration that the executor's exploration bias
-and the cooling schedule interact: a different executor changes the answer by
-changing what it never explores. Not a defect in the wiring; the control law
-behaved exactly as specified.
+rule is ever selected-and-snagged, so `wyz` (reachable only via a snag) vanishes
+(0/40). This is a live instance of the false-freeze mode documented in
+`farg-deep-dive.md`.
+
+**The fix, measured.** The control law gained *aspiration-coupled cooling*: it
+refuses to FREEZE on a frame below the `freeze_bar` and holds the temperature
+search-warm, so the scheduler keeps re-trying the snag-inducing base rule. Raising
+the bar to 0.99 recovers `wyz` with no change to the model:
+
+```
+                bar 0.90          bar 0.99
+  scripted      wyz 143/300       wyz 290/300     (48% -> 97%)
+  haiku (real)  wyz   0/40        wyz  23/40      (0% -> 58%, now the plurality)
+```
+
+`freeze_bar` defaults to 0.90, so the offline demo is unchanged; the new branch
+never fires at the default bar (every clean commit in this domain already clears
+0.90). This both confirms the false-freeze diagnosis (closing it recovers the
+elegant answer) and shows the executor's exploration bias and the cooling schedule
+interact. Not a defect in the wiring; the control law behaved exactly as specified.
+
+**Determinism fix (found while measuring).** The scripted distribution previously
+drifted a few counts run-to-run (137 vs 142 vs 143) even with fixed seeds, because
+`ScriptedProposer` built its candidate list by iterating over Python `set`s, whose
+order is randomized per process by `PYTHONHASHSEED`; that reordered the softmax
+inputs. The proposer now builds candidates in a fixed order, and the scripted
+distribution is reproducible across runs and hash seeds (143/83/74 of 300). The
+model path stays stochastic because the model's proposed rules vary slightly per
+call.
 
 Workflow: 5 agents, ~305k subagent tokens, 60 tool uses, ~414s.

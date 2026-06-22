@@ -233,8 +233,12 @@ class ScriptedProposer:
         cands = [base]                                   # scout (bottom-up)
         if net.activation.get("opposite", 0.0) >= net.SLIP_THRESHOLD:
             sp, so = net.slip(base.pos), net.slip(base.op)   # slip endpoints
-            for p in {base.pos, sp}:
-                for o in {base.op, so}:
+            # ordered (not set-based) so candidate order is deterministic regardless
+            # of PYTHONHASHSEED - otherwise softmax selection drifts run-to-run.
+            ps = [base.pos] + ([sp] if sp != base.pos else [])
+            ops = [base.op] + ([so] if so != base.op else [])
+            for p in ps:
+                for o in ops:
                     r = Rule(p, o)
                     if r != base:
                         cands.append(r)
@@ -395,7 +399,8 @@ def softmax_choice(items, scores, tau, rng):
             return it
     return items[-1]
 
-def solve(prob: Problem, proposer=None, seed=0, max_cycles=40, verbose=False):
+def solve(prob: Problem, proposer=None, seed=0, max_cycles=40, verbose=False,
+          freeze_bar=0.90, T_freeze=0.15, T_search=0.45):
     rng = random.Random(seed)
     proposer = proposer or ScriptedProposer()
     net, ws, temp = Slipnet(), Workspace(), Temperature()
@@ -424,12 +429,25 @@ def solve(prob: Problem, proposer=None, seed=0, max_cycles=40, verbose=False):
             stable = stable + 1 if chosen == last_clean else 1
             last_clean = chosen
             act = "commit"
-            # freeze when a clean reading is COHERENT, COOL, and STABLE
-            if c >= 0.90 and T <= 0.15 and stable >= 2:
+            # freeze only when a clean reading CLEARS THE ASPIRATION BAR, is cool, and
+            # stable. freeze_bar defaults to 0.90, so default behavior is unchanged.
+            if c >= freeze_bar and T <= T_freeze and stable >= 2:
                 act = "FREEZE"
                 trace.append((cycle, chosen, result, c, T, temp.tau(), act))
                 net.decay()
                 return result, chosen, trace
+            if c < freeze_bar:
+                # aspiration-coupled cooling: refuse to settle BELOW the bar. Hold the
+                # temperature search-warm so the scheduler keeps a real chance of
+                # re-trying the snag-inducing base rule - the only path to the
+                # higher-coherence reframe. This is the documented antidote to the
+                # false-freeze: do not let high-but-insufficient coherence cool the
+                # system into a confident, mediocre answer. (Never fires at the default
+                # bar, where every clean commit in this domain already clears 0.90.)
+                temp.value = max(temp.value, T_search)
+                T = temp.value
+                stable = 0
+                act = "commit (below bar: stay warm)"
             trace.append((cycle, chosen, result, c, T, temp.tau(), act))
 
         net.decay()                                      # slipnet relaxes each cycle
@@ -492,8 +510,10 @@ def _run_llm_demo(args):
         return
     proposer = LLMProposer(client, scaffold=not args.no_scaffold, verbose=True)
 
+    print(f"freeze bar: {args.freeze_bar:.2f}  (aspiration-coupled cooling stays warm below it)")
     prob = Problem("abc", "abd", args.problem)
-    r, rule, tr = solve(prob, proposer=proposer, seed=args.seed, max_cycles=12, verbose=True)
+    r, rule, tr = solve(prob, proposer=proposer, seed=args.seed, max_cycles=40,
+                        verbose=True, freeze_bar=args.freeze_bar)
     print(f"\nmodel's parsed candidates (validated): {[str(x) for x in proposer.last_parsed] or 'none usable'}")
     if proposer.last_raw is not None:
         snippet = " ".join(proposer.last_raw.split())[:200]
@@ -516,6 +536,9 @@ def main():
                     help="drop the deterministic control-layer floor; LLM candidates only")
     ap.add_argument("--problem", default="xyz", help="target string for the LLM demo (default: xyz)")
     ap.add_argument("--seed", type=int, default=7, help="RNG seed for the LLM demo")
+    ap.add_argument("--freeze-bar", type=float, default=0.90,
+                    help="aspiration bar: won't FREEZE below it, stays warm to keep "
+                         "exploring (default 0.90; try 0.99 to chase the elegant reframe)")
     args = ap.parse_args()
     if args.llm:
         _run_llm_demo(args)

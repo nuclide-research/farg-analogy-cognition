@@ -54,44 +54,78 @@ while the control layer (coherence critic, temperature, snag, slip, retract) is
 unchanged and still decides:
 
 ```
-python3 farg_loop.py --llm                          # default backend: anthropic (needs ANTHROPIC_API_KEY)
-python3 farg_loop.py --llm --backend ollama         # local model, no network egress
-python3 farg_loop.py --llm --backend openai         # needs OPENAI_API_KEY
-python3 farg_loop.py --llm --no-scaffold             # show the model's raw contribution only
-python3 farg_loop.py --llm --problem rst             # try a different target string
+python3 farg_loop.py --llm                      # default backend: claude-code (your Max/Pro auth, no API key)
+python3 farg_loop.py --llm --model haiku         # faster/cheaper model for this toy task
+python3 farg_loop.py --llm --backend ollama      # local model, no network egress
+python3 farg_loop.py --llm --backend openai      # needs OPENAI_API_KEY
+python3 farg_loop.py --llm --no-scaffold         # show the model's raw contribution only
+python3 farg_loop.py --llm --freeze-bar 0.99     # raise the aspiration bar (see below)
 ```
 
-The model only WIDENS the candidate set. A deterministic scaffold floor (base rule
-plus the `opposite`-gated slips) is unioned in by default, so the reframe is
-guaranteed regardless of model quality; `--no-scaffold` removes it. The model is
-asked once per problem (the prompt does not depend on the cycle), the reply is
-cached, malformed or out-of-vocabulary rules are dropped, and a client error
-degrades gracefully to the scaffold floor. The client is lazy-imported, so the
-offline demo stays stdlib-only with no SDK installed.
+The `claude-code` backend shells out to the headless `claude` CLI and uses your
+logged-in Claude Code subscription auth, so no API key is needed. The model only
+WIDENS the candidate set. A deterministic scaffold floor (base rule plus the
+`opposite`-gated slips) is unioned in by default, so the reframe is guaranteed
+regardless of model quality; `--no-scaffold` removes it. The model is asked once
+per problem (the prompt does not depend on the cycle), the reply is cached,
+malformed or out-of-vocabulary rules are dropped, and a client error degrades
+gracefully to the scaffold floor. The client is lazy-imported, so the offline demo
+stays stdlib-only with no SDK installed.
+
+#### The executor swap shifts the answer, and the freeze bar steers it back
 
 Swapping the executor genuinely shifts the answer distribution while the control
-law stays byte-for-byte identical. Measured live, with `claude-haiku` as the
-executor (30 seeds), versus the offline scripted run (300 seeds):
+law stays byte-for-byte identical. At the default freeze bar (0.90), measured live
+with `claude-haiku` (40 seeds) versus the offline scripted run (300, deterministic):
 
 ```
-  real model (haiku), 30 seeds      offline scripted, 300 seeds
-    yyz  17/30                         wyz  137/300  (~46%)
-    xyy  12/30                         yyz   84/300  (~28%)
-    wyz   1/30                         xyy   79/300  (~26%)
+  real model (haiku), bar 0.90      offline scripted, bar 0.90
+    yyz  21/40                         wyz  143/300
+    xyy  19/40                         xyy   83/300
+    wyz   0/40                         yyz   74/300
 ```
 
-The reason is instructive. The scripted scout has no clean candidate except the
-base rule, which always hits the `z` wall, so it is forced through the snag that
-activates `opposite` and surfaces the elegant double-slip `wyz`. The real model
-proactively offers simpler "change the other end" readings (`yyz`, `xyy`) at
-coherence 0.93; those commit and the temperature cools so fast the loop freezes
-before the base rule is ever selected-and-snagged. `wyz` is reachable only through
-a snag, so an executor that avoids the wall also avoids `wyz`. This is a live
-instance of the false-freeze mode described in `farg-deep-dive.md`: cooling onto a
-locally-coherent (0.93) frame before the globally more elegant (1.0) one is ever
-surfaced. The lesson is not that the model is worse, it is that the executor's
-exploration bias and the control law's cooling schedule interact, and a smarter
-executor can change the answer by changing what it never explores.
+The scripted scout has no clean candidate except the base rule, which always hits
+the `z` wall, so it is forced through the snag that activates `opposite` and
+surfaces the elegant double-slip `wyz`. The real model proactively offers simpler
+"change the other end" readings (`yyz`, `xyy`) at coherence 0.93; those commit, the
+temperature cools so fast the loop freezes, and the base rule is never
+selected-and-snagged. `wyz` is reachable only through a snag, so an executor that
+dodges the wall also dodges `wyz` (0/40). That is a live instance of the
+false-freeze mode in `farg-deep-dive.md`: cooling onto a locally-coherent (0.93)
+frame before the globally more elegant (1.0) one is ever surfaced.
+
+Raising the freeze bar is the fix. The control law gains *aspiration-coupled
+cooling*: it refuses to FREEZE on any frame below the bar, holding the temperature
+search-warm so the scheduler keeps a real chance of re-trying the snag-inducing
+base rule. Raise the bar to 0.99 and `wyz` comes back, with no change to the model:
+
+```
+                bar 0.90          bar 0.99
+  scripted      wyz 143/300       wyz 290/300     (48% -> 97%)
+  haiku (real)  wyz   0/40        wyz  23/40      (0% -> 58%, now the plurality)
+```
+
+A live `--freeze-bar 0.99` trace shows exactly how: the loop stays warm on the
+0.93 escapes until it finally re-tries the wall, snags, and locks the reframe.
+
+```
+cyc               rule tried    ->     c     T   tau  action
+  1    (leftmost, successor)   yyz  0.93  0.45  0.39  commit (below bar: stay warm)
+  ...  (eight more 0.93 commits, temperature held warm at 0.45) ...
+ 10   (rightmost, successor)    --  0.00  1.00  0.72  SNAG->retract+reheat
+ 11-13 ... still exploring while `opposite` is hot ...
+ 14  (leftmost, predecessor)   wyz  1.00  0.06  0.15  commit
+ 15  (leftmost, predecessor)   wyz  1.00  0.05  0.15  FREEZE
+ANSWER: xyz -> wyz   via (leftmost, predecessor)
+```
+
+`freeze_bar` defaults to 0.90, so the offline demo is unchanged. (Note: the
+scripted distribution is now deterministic across runs. It previously drifted by a
+few counts because candidate order came from set iteration under hash
+randomization; the proposer now builds candidates in a fixed order. The model path
+remains stochastic because the model's proposed rules vary slightly per call, so
+the haiku counts above are one representative run.)
 
 ## What is honest about it, and what is a toy
 

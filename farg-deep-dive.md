@@ -466,6 +466,21 @@ Three antidotes, all required together: residual exploration at all temperatures
 If the critic says coherent when it is not, you freeze on a false high c and no snag
 fires. Prefer structural signals that cannot be fooled by fluent-but-wrong text.
 
+A fourth antidote, found and measured while running farg_loop.py with a real model:
+ASPIRATION-COUPLED COOLING. Give the freeze a quality bar (freeze_bar) and refuse to
+cool into a freeze on any frame below it; hold the temperature search-warm while
+unsatisfied. The prototype made the failure concrete. With claude-haiku as the
+executor, the model proposed simpler "change the other end" readings at coherence
+0.93; the loop cooled and froze on them and the elegant 1.0 answer (reachable only
+through a snag) appeared 0 times in 40 runs. Raising the bar from 0.90 to 0.99
+recovered it: scripted 48% -> 97%, the real model 0% -> 58%, with NO change to the
+model. The mechanism: below the bar the controller stays warm, so the scheduler
+keeps re-trying the snag-inducing base rule, the snag activates `opposite`, and the
+reframe surfaces and locks. The lesson generalizes: a freeze with no quality floor
+will settle for the first locally-coherent answer an executor happens to offer, and
+a better executor that offers a "good enough" escape can paradoxically reach a worse
+answer by never being forced through the snag that the elegant answer requires.
+
 ### Cost discipline: tiered measurement
 
 ```
