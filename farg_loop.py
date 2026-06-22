@@ -33,9 +33,17 @@ Honesty boundary (read this before trusting the demo):
         (longer exploration, a few-percent shift in the answer distribution)
       - a temperature-gated stochastic scheduler (softmax at temp tau; scouts vs
         top-down probes)
-  * The EXECUTOR is pluggable. A ScriptedProposer ships here so the loop is
-    watchable offline; LLMProposer shows the one-class swap for a real model but is
-    an honest NotImplementedError stub - the "real model" executor is never run.
+  * The EXECUTOR is pluggable. ScriptedProposer ships as the default so the loop is
+    watchable OFFLINE with the stdlib only. LLMProposer is now wired (opt-in via
+    `--llm`): it asks a real model for candidate (pos, op) rules and parses +
+    validates them into Rule objects against the legal vocabulary. The model only
+    WIDENS the candidate set; the control layer (coherence critic -> temperature ->
+    softmax selection, snag -> retract + `opposite`-gated slip) is byte-for-byte
+    unchanged and still decides. By default a deterministic SCAFFOLD floor (base
+    rule + opposite-gated slips) is unioned in, so the reframe is guaranteed
+    regardless of model quality; `--no-scaffold` strips it to show the model's raw
+    contribution. The client is lazy-imported, so this file stays importable and the
+    offline demo stays stdlib-only when no SDK or API key is present.
   * NOTHING is hardcoded to the answer. `wyz` is not a string anywhere in the
     decision path. It EMERGES from slip(rightmost)->leftmost and
     slip(successor)->predecessor, each gated by the `opposite` concept that the
@@ -237,13 +245,123 @@ class ScriptedProposer:
                 seen.add(r); out.append(r)
         return out
 
-class LLMProposer:                                       # noqa: the swap point
-    """Drop-in replacement: same propose() signature. A real model would be asked
-    'what single transformation maps S0 to S1, and how could it bend if it hits a
-    wall?' and its reply parsed into Rule objects. Left unwired so the demo runs
-    offline; nothing else in the loop changes."""
+# ---- LLM executor (wired). Imports stay lazy so the offline demo needs no SDK. --
+
+_VALID_POS = {"leftmost", "rightmost", "middle"}
+_VALID_OP = {"successor", "predecessor", "identity"}
+
+def _parse_rules(raw: str) -> list[Rule]:
+    """Parse a model reply into VALIDATED Rule objects. Pull the first JSON array,
+    keep only entries whose (pos, op) are in the legal vocabulary, dedup. Anything
+    malformed is silently dropped - the control layer is never fed an illegal rule."""
+    import json, re
+    if not raw:
+        return []
+    m = re.search(r"\[.*\]", raw, re.DOTALL)
+    try:
+        data = json.loads(m.group(0) if m else raw)
+    except Exception:
+        return []
+    out, seen = [], set()
+    for item in data if isinstance(data, list) else []:
+        if not isinstance(item, dict):
+            continue
+        pos = str(item.get("pos", "")).strip().lower()
+        op = str(item.get("op", "")).strip().lower()
+        if pos in _VALID_POS and op in _VALID_OP:
+            r = Rule(pos, op)
+            if r not in seen:
+                seen.add(r); out.append(r)
+    return out
+
+_DEFAULT_MODELS = {"anthropic": "claude-haiku-4-5-20251001",
+                   "ollama": "llama3.2", "openai": "gpt-4o-mini"}
+
+def make_llm_client(backend: str, model: str | None = None):
+    """Return a callable  prompt:str -> completion:str  for the chosen backend.
+    Lazy-imports the SDK inside the branch so importing this module never requires
+    it. anthropic/openai read their API key from env; ollama runs LOCAL (no cloud
+    egress), which is the right default when you do not want the prompt to leave the
+    box."""
+    model = model or _DEFAULT_MODELS.get(backend)
+    if backend == "anthropic":
+        from anthropic import Anthropic            # pip install anthropic ; ANTHROPIC_API_KEY
+        client = Anthropic()
+        def call(prompt: str) -> str:
+            msg = client.messages.create(
+                model=model, max_tokens=512,
+                messages=[{"role": "user", "content": prompt}])
+            return "".join(b.text for b in msg.content if getattr(b, "type", None) == "text")
+        return call
+    if backend == "ollama":
+        import ollama                              # local daemon; no network egress
+        def call(prompt: str) -> str:
+            r = ollama.chat(model=model, messages=[{"role": "user", "content": prompt}])
+            return r["message"]["content"]
+        return call
+    if backend == "openai":
+        from openai import OpenAI                  # pip install openai ; OPENAI_API_KEY
+        client = OpenAI()
+        def call(prompt: str) -> str:
+            r = client.chat.completions.create(
+                model=model, max_tokens=512,
+                messages=[{"role": "user", "content": prompt}])
+            return r.choices[0].message.content or ""
+        return call
+    raise ValueError(f"unknown backend: {backend!r} (use anthropic|ollama|openai)")
+
+class LLMProposer:
+    """The swap point, now real. Same propose(self, prob, net) -> list[Rule] contract
+    as ScriptedProposer, so solve() does not change. It asks a model for candidate
+    rules, parses+validates them, and (by default) UNIONs in the deterministic
+    scaffold floor so the control layer's guarantees hold no matter what the model
+    says. The model is asked ONCE per problem (the prompt does not depend on cycle or
+    net state), so its reply is cached and the per-cycle cost is just the cheap
+    scaffold recompute."""
+
+    PROMPT = (
+        "You are a single perception codelet in a Copycat-style analogy solver.\n"
+        "A transformation maps string S0 to S1. Propose candidate rules that would "
+        "transform the target string T0 in the SAME spirit.\n\n"
+        "A rule is a (position, operation) pair:\n"
+        "  position  in: leftmost | rightmost | middle\n"
+        "  operation in: successor | predecessor | identity\n"
+        "The alphabet has walls: 'z' has no successor, 'a' has no predecessor. If the "
+        "obvious rule would hit a wall on T0, ALSO propose how it could bend (flip the "
+        "end you act on, or flip the direction).\n\n"
+        "S0 = {s0}\nS1 = {s1}\nT0 = {t0}\n\n"
+        "Reply with ONLY a JSON array of objects, each {{\"pos\": ..., \"op\": ...}}, "
+        "ordered most-natural first, 1 to 5 rules. No prose."
+    )
+
+    def __init__(self, client, *, scaffold: bool = True, verbose: bool = False):
+        self.client = client          # callable: prompt -> completion text
+        self.scaffold = scaffold      # keep the deterministic control-layer floor
+        self.verbose = verbose
+        self._cache: dict[str, str] = {}
+        self.last_raw: str | None = None
+        self.last_parsed: list[Rule] = []
+
     def propose(self, prob: Problem, net: Slipnet) -> list[Rule]:
-        raise NotImplementedError("wire your model here; return list[Rule]")
+        prompt = self.PROMPT.format(s0=prob.s0, s1=prob.s1, t0=prob.target)
+        if prompt not in self._cache:
+            try:
+                self._cache[prompt] = self.client(prompt)
+            except Exception as e:                # network/key/SDK failure -> scaffold floor
+                self._cache[prompt] = ""
+                if self.verbose:
+                    print(f"  [LLM error: {e}; falling back to scaffold]")
+        raw = self._cache[prompt]
+        self.last_raw = raw
+        cands = _parse_rules(raw)
+        self.last_parsed = list(cands)
+        if self.scaffold:                         # union the deterministic floor in
+            for r in ScriptedProposer().propose(prob, net):
+                if r not in cands:
+                    cands.append(r)
+        elif not cands:                           # no floor and model gave nothing usable
+            cands = [prob.base_rule]
+        return cands
 
 # ----------------------------------------------------------------------------
 # the loop
@@ -313,8 +431,9 @@ def _print_trace(title, prob, result, rule, trace):
         print(f"{cy:>3} {str(r):>24} {str(res or '--'):>5} {c:>5.2f} {T:>5.2f} {tau:>5.2f}  {act}")
     print(f"ANSWER: {prob.target} -> {result}   via {rule}")
 
-def main():
+def _run_offline_demos():
     print("FARG-flavored loop :: endogenous temperature, snag re-heat, slip() reframe")
+    print("executor: ScriptedProposer (offline, stdlib only)")
 
     # 1) easy frame: no wall, no snag, cools and commits on cycle 1-2
     p1 = Problem("abc", "abd", "ijk")
@@ -340,6 +459,50 @@ def main():
         bar = "#" * round(60 * n / 300)
         print(f"  {res} via {rule:>24}  {n:>3}/300  {bar}")
     print("  (the elegant double-opposite-slip dominates by coherence, not by fiat)")
+
+def _run_llm_demo(args):
+    """Same loop, real model as the codelet executor. The control layer is untouched;
+    only the proposer changes. We print the model's parsed candidates so you can see
+    its contribution, then run the loop to show the SAME control law still decides."""
+    backend, model = args.backend, args.model or _DEFAULT_MODELS.get(args.backend)
+    print(f"FARG-flavored loop :: executor = LLMProposer  (backend={backend}, model={model})")
+    print(f"scaffold floor: {'ON (model widens; deterministic reframe guaranteed)' if not args.no_scaffold else 'OFF (model candidates only)'}")
+    try:
+        client = make_llm_client(backend, model)
+    except Exception as e:
+        print(f"\n[could not build the {backend} client: {e}]")
+        print("install the SDK and set the API key, or try --backend ollama for a local model.")
+        return
+    proposer = LLMProposer(client, scaffold=not args.no_scaffold, verbose=True)
+
+    prob = Problem("abc", "abd", args.problem)
+    r, rule, tr = solve(prob, proposer=proposer, seed=args.seed, max_cycles=12, verbose=True)
+    print(f"\nmodel's parsed candidates (validated): {[str(x) for x in proposer.last_parsed] or 'none usable'}")
+    if proposer.last_raw is not None:
+        snippet = " ".join(proposer.last_raw.split())[:200]
+        print(f"model raw reply (truncated): {snippet}")
+    _print_trace(f"LLM DEMO  (executor={backend})", prob, r, rule, tr)
+
+def main():
+    import argparse
+    ap = argparse.ArgumentParser(
+        description="FARG-flavored agent loop. Default runs OFFLINE (stdlib only). "
+                    "--llm swaps in a real model as the codelet executor.")
+    ap.add_argument("--llm", action="store_true",
+                    help="use an LLM as the codelet executor (default: offline ScriptedProposer)")
+    ap.add_argument("--backend", default="anthropic",
+                    choices=["anthropic", "ollama", "openai"],
+                    help="LLM backend for --llm (default: anthropic; ollama is local/no-egress)")
+    ap.add_argument("--model", default=None, help="model id (per-backend default if omitted)")
+    ap.add_argument("--no-scaffold", action="store_true",
+                    help="drop the deterministic control-layer floor; LLM candidates only")
+    ap.add_argument("--problem", default="xyz", help="target string for the LLM demo (default: xyz)")
+    ap.add_argument("--seed", type=int, default=7, help="RNG seed for the LLM demo")
+    args = ap.parse_args()
+    if args.llm:
+        _run_llm_demo(args)
+    else:
+        _run_offline_demos()
 
 if __name__ == "__main__":
     main()

@@ -64,7 +64,15 @@ One real overclaim was found and has been corrected (see below).
   defensible, but the docstring now states the 70/30 split honestly.
 - A snag short-circuits coherence to exactly 0.0 (the docstring previously said
   "near 0"). Corrected to "exactly 0.0".
-- The `LLMProposer` swap is unwired; the real-model executor is never exercised.
-  Honestly disclosed.
+- ~~The `LLMProposer` swap is unwired; the real-model executor is never
+  exercised.~~ **RESOLVED (follow-up commit).** `LLMProposer` is now wired: it
+  asks a model for candidate `(pos, op)` rules, parses and validates them against
+  the legal vocabulary, caches the per-problem reply, and degrades to the scaffold
+  floor on any client error. The full path (parse, propose, solve, cache,
+  fallback, malformed-input rejection) is unit-verified with an injected stub
+  client. Opt-in via `--llm` (`anthropic` | `ollama` | `openai`); the offline
+  scripted demo remains the default and stays stdlib-only. Still honest: a live
+  call against a hosted model was not exercised in CI, so whether a specific real
+  model returns parseable rules is model-dependent.
 
 Workflow: 5 agents, ~305k subagent tokens, 60 tool uses, ~414s.

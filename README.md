@@ -46,17 +46,46 @@ letter-string domain (abc -> abd, so what does ijk -> ? and xyz -> ?):
   answers. `wyz` is the plurality, not a certainty. The point is that the answer
   is genuinely emergent from the slippage dynamics, not a literal in the code.
 
+### Running with a real model as the executor
+
+The codelet executor is pluggable. By default the loop runs offline with a scripted
+proposer; pass `--llm` to swap in a real model that proposes the candidate rules,
+while the control layer (coherence critic, temperature, snag, slip, retract) is
+unchanged and still decides:
+
+```
+python3 farg_loop.py --llm                          # default backend: anthropic (needs ANTHROPIC_API_KEY)
+python3 farg_loop.py --llm --backend ollama         # local model, no network egress
+python3 farg_loop.py --llm --backend openai         # needs OPENAI_API_KEY
+python3 farg_loop.py --llm --no-scaffold             # show the model's raw contribution only
+python3 farg_loop.py --llm --problem rst             # try a different target string
+```
+
+The model only WIDENS the candidate set. A deterministic scaffold floor (base rule
+plus the `opposite`-gated slips) is unioned in by default, so the reframe is
+guaranteed regardless of model quality; `--no-scaffold` removes it. The model is
+asked once per problem (the prompt does not depend on the cycle), the reply is
+cached, malformed or out-of-vocabulary rules are dropped, and a client error
+degrades gracefully to the scaffold floor. The client is lazy-imported, so the
+offline demo stays stdlib-only with no SDK installed.
+
+A nice consequence: when the model proposes the elegant `(leftmost, predecessor)`
+reading up front, the loop reaches `wyz` in two cycles with no snag at all. A
+smarter executor shortcuts the search; the control layer still scores and selects.
+
 ## What is honest about it, and what is a toy
 
 Honest: the temperature is endogenous (computed from workspace coherence, not set
 by hand), it re-heats on a snag, the workspace supports a real retract, slippage is
-gated by an activated concept, and the answer is selected stochastically from
-emergent proposals.
+gated by an activated concept, the answer is selected stochastically from emergent
+proposals, and the LLM executor is genuinely wired (parse, validate, cache,
+graceful fallback) behind the same `propose()` contract as the scripted one.
 
-A toy: the proposer for the demo is scripted rather than an LLM (an `LLMProposer`
-stub shows the one-class swap), the domain is tiny, and the concept graph is
-hand-built. It is a faithful skeleton of the control law, not a re-implementation
-of Copycat.
+A toy: the domain is tiny, the concept graph is hand-built, and the shipped demo
+defaults to the scripted proposer so it runs offline. The LLM path is wired and
+unit-verified with an injected stub client, but whether a given real model returns
+parseable rules depends on the model. It is a faithful skeleton of the control law,
+not a re-implementation of Copycat.
 
 ## References
 
