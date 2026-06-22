@@ -69,9 +69,29 @@ cached, malformed or out-of-vocabulary rules are dropped, and a client error
 degrades gracefully to the scaffold floor. The client is lazy-imported, so the
 offline demo stays stdlib-only with no SDK installed.
 
-A nice consequence: when the model proposes the elegant `(leftmost, predecessor)`
-reading up front, the loop reaches `wyz` in two cycles with no snag at all. A
-smarter executor shortcuts the search; the control layer still scores and selects.
+Swapping the executor genuinely shifts the answer distribution while the control
+law stays byte-for-byte identical. Measured live, with `claude-haiku` as the
+executor (30 seeds), versus the offline scripted run (300 seeds):
+
+```
+  real model (haiku), 30 seeds      offline scripted, 300 seeds
+    yyz  17/30                         wyz  137/300  (~46%)
+    xyy  12/30                         yyz   84/300  (~28%)
+    wyz   1/30                         xyy   79/300  (~26%)
+```
+
+The reason is instructive. The scripted scout has no clean candidate except the
+base rule, which always hits the `z` wall, so it is forced through the snag that
+activates `opposite` and surfaces the elegant double-slip `wyz`. The real model
+proactively offers simpler "change the other end" readings (`yyz`, `xyy`) at
+coherence 0.93; those commit and the temperature cools so fast the loop freezes
+before the base rule is ever selected-and-snagged. `wyz` is reachable only through
+a snag, so an executor that avoids the wall also avoids `wyz`. This is a live
+instance of the false-freeze mode described in `farg-deep-dive.md`: cooling onto a
+locally-coherent (0.93) frame before the globally more elegant (1.0) one is ever
+surfaced. The lesson is not that the model is worse, it is that the executor's
+exploration bias and the control law's cooling schedule interact, and a smarter
+executor can change the answer by changing what it never explores.
 
 ## What is honest about it, and what is a toy
 

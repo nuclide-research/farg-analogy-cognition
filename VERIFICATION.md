@@ -70,9 +70,34 @@ One real overclaim was found and has been corrected (see below).
   the legal vocabulary, caches the per-problem reply, and degrades to the scaffold
   floor on any client error. The full path (parse, propose, solve, cache,
   fallback, malformed-input rejection) is unit-verified with an injected stub
-  client. Opt-in via `--llm` (`anthropic` | `ollama` | `openai`); the offline
-  scripted demo remains the default and stays stdlib-only. Still honest: a live
-  call against a hosted model was not exercised in CI, so whether a specific real
-  model returns parseable rules is model-dependent.
+  client. Opt-in via `--llm` (`claude-code` | `anthropic` | `ollama` | `openai`);
+  the offline scripted demo remains the default and stays stdlib-only.
+  **Live-confirmed:** run end-to-end through the `claude-code` backend (headless
+  `claude` CLI, Claude Code Max auth, `claude-haiku`). The model returned JSON
+  wrapped in ```` ```json ```` fences and the parser extracted and validated it
+  correctly. So a real model does return parseable rules through this path.
+
+## Live executor-swap observation (claude-haiku vs scripted)
+
+Swapping in the real model shifts the answer distribution while the control law is
+unchanged:
+
+```
+  real model (haiku), 30 seeds      offline scripted, 300 seeds
+    yyz  17/30                         wyz  137/300
+    xyy  12/30                         yyz   84/300
+    wyz   1/30                         xyy   79/300
+```
+
+The scripted scout has no clean candidate but the base rule, which always hits the
+`z` wall, so it is forced through the snag that activates `opposite` and yields the
+double-slip `wyz`. The model proactively proposes simpler clean readings (`yyz`,
+`xyy`) at coherence 0.93; those commit and the temperature cools before the base
+rule is ever selected-and-snagged, so `wyz` (reachable only via a snag) nearly
+vanishes. This is a live instance of the false-freeze mode documented in
+`farg-deep-dive.md`, and a clean demonstration that the executor's exploration bias
+and the cooling schedule interact: a different executor changes the answer by
+changing what it never explores. Not a defect in the wiring; the control law
+behaved exactly as specified.
 
 Workflow: 5 agents, ~305k subagent tokens, 60 tool uses, ~414s.

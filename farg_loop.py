@@ -274,16 +274,33 @@ def _parse_rules(raw: str) -> list[Rule]:
                 seen.add(r); out.append(r)
     return out
 
-_DEFAULT_MODELS = {"anthropic": "claude-haiku-4-5-20251001",
+_DEFAULT_MODELS = {"claude-code": None, "anthropic": "claude-haiku-4-5-20251001",
                    "ollama": "llama3.2", "openai": "gpt-4o-mini"}
 
 def make_llm_client(backend: str, model: str | None = None):
     """Return a callable  prompt:str -> completion:str  for the chosen backend.
-    Lazy-imports the SDK inside the branch so importing this module never requires
-    it. anthropic/openai read their API key from env; ollama runs LOCAL (no cloud
-    egress), which is the right default when you do not want the prompt to leave the
-    box."""
+    Lazy-imports the SDK/CLI inside the branch so importing this module never
+    requires it. `claude-code` shells out to the installed `claude` CLI in headless
+    mode and uses your logged-in Claude Code (Max/Pro) auth - no API key needed, the
+    right default when you have a subscription rather than API credits.
+    anthropic/openai read an API key from env; ollama runs LOCAL (no cloud egress)."""
     model = model or _DEFAULT_MODELS.get(backend)
+    if backend == "claude-code":
+        import subprocess, shutil
+        exe = shutil.which("claude")
+        if not exe:
+            raise RuntimeError("the `claude` CLI is not on PATH (install Claude Code)")
+        def call(prompt: str) -> str:
+            # headless one-shot using the logged-in subscription auth. cwd is neutral
+            # so a project CLAUDE.md cannot leak into the codelet prompt.
+            cmd = [exe, "-p", prompt, "--output-format", "text"]
+            if model:
+                cmd += ["--model", model]
+            r = subprocess.run(cmd, capture_output=True, text=True, timeout=120, cwd="/tmp")
+            if r.returncode != 0:
+                raise RuntimeError(r.stderr.strip() or f"claude exited {r.returncode}")
+            return r.stdout
+        return call
     if backend == "anthropic":
         from anthropic import Anthropic            # pip install anthropic ; ANTHROPIC_API_KEY
         client = Anthropic()
@@ -490,9 +507,10 @@ def main():
                     "--llm swaps in a real model as the codelet executor.")
     ap.add_argument("--llm", action="store_true",
                     help="use an LLM as the codelet executor (default: offline ScriptedProposer)")
-    ap.add_argument("--backend", default="anthropic",
-                    choices=["anthropic", "ollama", "openai"],
-                    help="LLM backend for --llm (default: anthropic; ollama is local/no-egress)")
+    ap.add_argument("--backend", default="claude-code",
+                    choices=["claude-code", "anthropic", "ollama", "openai"],
+                    help="LLM backend for --llm (default: claude-code, uses your "
+                         "logged-in Max/Pro auth; ollama is local/no-egress)")
     ap.add_argument("--model", default=None, help="model id (per-backend default if omitted)")
     ap.add_argument("--no-scaffold", action="store_true",
                     help="drop the deterministic control-layer floor; LLM candidates only")
