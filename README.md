@@ -15,6 +15,8 @@ FARG-style control loop.
 | `analogy-as-the-core-of-cognition-raw-transcript.md` | The raw ASR transcript of the Stanford lecture the essay is distilled from. Source material, kept for provenance. |
 | `farg-deep-dive.md` | The four-part technical thread: (1) the Slipnet update rule, (2) Letter Spirit and the what/how tension, (3) mapping FARG onto a modern agent loop, (4) the coherence-to-temperature control law in detail. ASCII diagrams are load-bearing. |
 | `farg_loop.py` | A single-file, stdlib-only, runnable FARG-flavored agent loop. Implements activation/depth, label-gated slippage, a coherence critic, endogenous temperature with snag re-heat, and a softmax scheduler. The answer emerges; it is not hardcoded. |
+| `test_farg_loop.py` | A stdlib `unittest` suite (23 tests) that freezes the adversarial verification verdict as regression tests: no hardcoded answer, the slip/opposite/reheat ablations, the canonical distribution, cross-`PYTHONHASHSEED` determinism, the freeze-bar recovery, the give-up detector, and the LLM-reply parser. |
+| `ANALYSIS.md` | The generalizable agent-design lesson distilled from building this: a more capable executor can reach a worse answer by routing around the productive failure, why that is structural, and the one-branch fix (a quality floor on convergence). |
 
 ## The argument in one paragraph
 
@@ -45,6 +47,22 @@ letter-string domain (abc -> abd, so what does ijk -> ? and xyz -> ?):
 - Demo 3: 300 stochastic runs of the `xyz` case, printing the distribution of
   answers. `wyz` is the plurality, not a certainty. The point is that the answer
   is genuinely emergent from the slippage dynamics, not a literal in the code.
+
+To watch the dynamics instead of the table, pass `--plot` for an ASCII sparkline of
+temperature and coherence per cycle. It picks a seed where the default bar
+false-freezes and the raised bar recovers, then plots both: you can see the snag as a
+temperature spike and the false-freeze as coherence stuck below the top while the
+temperature flatlines low.
+
+```
+python3 farg_loop.py --plot
+```
+
+To run the test suite (stdlib only, no network, no model):
+
+```
+python3 -m unittest test_farg_loop -v
+```
 
 ### Running with a real model as the executor
 
@@ -140,6 +158,10 @@ defaults to the scripted proposer so it runs offline. The LLM path is wired and
 unit-verified with an injected stub client, but whether a given real model returns
 parseable rules depends on the model. It is a faithful skeleton of the control law,
 not a re-implementation of Copycat.
+
+The surprising part, that a more capable executor reached a *worse* answer by routing
+around the snag, generalizes past this toy. The lesson and the one-branch fix are
+written up in [`ANALYSIS.md`](ANALYSIS.md).
 
 ## References
 

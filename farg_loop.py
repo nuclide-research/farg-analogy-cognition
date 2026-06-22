@@ -400,11 +400,11 @@ def softmax_choice(items, scores, tau, rng):
     return items[-1]
 
 def solve(prob: Problem, proposer=None, seed=0, max_cycles=40, verbose=False,
-          freeze_bar=0.90, T_freeze=0.15, T_search=0.45):
+          freeze_bar=0.90, T_freeze=0.15, T_search=0.45, max_snags=6):
     rng = random.Random(seed)
     proposer = proposer or ScriptedProposer()
     net, ws, temp = Slipnet(), Workspace(), Temperature()
-    last_clean, stable = None, 0
+    last_clean, stable, consec_snags = None, 0, 0
     trace = []
 
     for cycle in range(1, max_cycles + 1):
@@ -422,9 +422,19 @@ def solve(prob: Problem, proposer=None, seed=0, max_cycles=40, verbose=False,
             temp.snag()                                  # re-heat
             T = temp.update(c)
             last_clean, stable = None, 0
+            consec_snags += 1
             trace.append((cycle, chosen, None, c, T, temp.tau(), "SNAG->retract+reheat"))
+            if consec_snags >= max_snags:                # snag loop: no viable clean candidate
+                # give up rather than spin to max_cycles. Fires only when EVERY proposed
+                # candidate snags for max_snags cycles running (e.g. --no-scaffold with a
+                # dead executor). A healthy run has isolated snags and never reaches here.
+                trace.append((cycle, chosen, None, c, T, temp.tau(),
+                              f"GIVE-UP ({consec_snags} snags in a row, no progress)"))
+                net.decay()
+                return None, None, trace
         else:                                            # clean apply
             ws.commit(chosen, result)
+            consec_snags = 0
             T = temp.update(c)
             stable = stable + 1 if chosen == last_clean else 1
             last_clean = chosen
@@ -464,7 +474,50 @@ def _print_trace(title, prob, result, rule, trace):
     print("-" * 78)
     for (cy, r, res, c, T, tau, act) in trace:
         print(f"{cy:>3} {str(r):>24} {str(res or '--'):>5} {c:>5.2f} {T:>5.2f} {tau:>5.2f}  {act}")
-    print(f"ANSWER: {prob.target} -> {result}   via {rule}")
+    if result is None:
+        print(f"NO SOLUTION for {prob.target} (gave up: snag loop, no viable clean candidate)")
+    else:
+        print(f"ANSWER: {prob.target} -> {result}   via {rule}")
+
+_BLOCKS = " ▁▂▃▄▅▆▇█"
+def _spark(values):
+    """One block char per value in [0,1]; the column height IS the magnitude."""
+    return "".join(_BLOCKS[max(0, min(8, round(v * 8)))] for v in values)
+
+def _plot_trace(title, trace):
+    """ASCII sparkline of temperature and coherence per cycle, with a marker row.
+    The snag shows as a temperature SPIKE; the false-freeze shows as c stuck below
+    the top while T flatlines low; the recovery shows as a spike then a climb to
+    full c."""
+    Ts = [t[4] for t in trace]
+    cs = [t[3] for t in trace]
+    def mark(act):
+        return ("S" if act.startswith("SNAG") else "G" if act.startswith("GIVE")
+                else "F" if act == "FREEZE" else "w" if "stay warm" in act else ".")
+    marks = "".join(mark(t[6]) for t in trace)
+    print(f"\n  {title}   ({len(trace)} cycles)")
+    print(f"    T 1|{_spark(Ts)}")
+    print(f"    c 1|{_spark(cs)}")
+    print(f"       |{marks}")
+    print("    key: S snag  w below-bar(warm)  . commit  F freeze  G give-up")
+
+def _run_plot_demo(args):
+    print("FARG-flavored loop :: ASCII plot of temperature (T) and coherence (c) per cycle")
+    print("Same seed, two freeze bars: watch the default bar settle low (false-freeze)")
+    print("and the raised bar stay warm, snag, and climb to full coherence.\n")
+    # find a deterministic seed where bar 0.90 false-freezes (non-wyz) but 0.99 recovers wyz
+    seed = 0
+    for s in range(300):
+        r90, _, _ = solve(Problem("abc", "abd", "xyz"), seed=s, freeze_bar=0.90)
+        r99, _, _ = solve(Problem("abc", "abd", "xyz"), seed=s, freeze_bar=0.99)
+        if r90 != "wyz" and r99 == "wyz":
+            seed = s
+            break
+    for bar in (0.90, 0.99):
+        prob = Problem("abc", "abd", "xyz")
+        r, rule, tr = solve(prob, seed=seed, freeze_bar=bar)
+        _print_trace(f"bar {bar:.2f} (seed {seed})", prob, r, rule, tr)
+        _plot_trace(f"bar {bar:.2f}", tr)
 
 def _run_offline_demos():
     print("FARG-flavored loop :: endogenous temperature, snag re-heat, slip() reframe")
@@ -519,6 +572,8 @@ def _run_llm_demo(args):
         snippet = " ".join(proposer.last_raw.split())[:200]
         print(f"model raw reply (truncated): {snippet}")
     _print_trace(f"LLM DEMO  (executor={backend})", prob, r, rule, tr)
+    if args.plot:
+        _plot_trace(f"{backend} bar {args.freeze_bar:.2f}", tr)
 
 def main():
     import argparse
@@ -539,9 +594,13 @@ def main():
     ap.add_argument("--freeze-bar", type=float, default=0.90,
                     help="aspiration bar: won't FREEZE below it, stays warm to keep "
                          "exploring (default 0.90; try 0.99 to chase the elegant reframe)")
+    ap.add_argument("--plot", action="store_true",
+                    help="ASCII sparkline of temperature and coherence per cycle")
     args = ap.parse_args()
     if args.llm:
         _run_llm_demo(args)
+    elif args.plot:
+        _run_plot_demo(args)
     else:
         _run_offline_demos()
 
