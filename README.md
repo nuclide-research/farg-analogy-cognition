@@ -17,6 +17,7 @@ FARG-style control loop.
 | `farg_loop.py` | A single-file, stdlib-only, runnable FARG-flavored agent loop. Implements activation/depth, label-gated slippage, a coherence critic, endogenous temperature with snag re-heat, and a softmax scheduler. The answer emerges; it is not hardcoded. |
 | `test_farg_loop.py` | A stdlib `unittest` suite (23 tests) that freezes the adversarial verification verdict as regression tests: no hardcoded answer, the slip/opposite/reheat ablations, the canonical distribution, cross-`PYTHONHASHSEED` determinism, the freeze-bar recovery, the give-up detector, and the LLM-reply parser. |
 | `ANALYSIS.md` | The generalizable agent-design lesson distilled from building this: a more capable executor can reach a worse answer by routing around the productive failure, why that is structural, and the one-branch fix (a quality floor on convergence). |
+| `false-freeze-and-the-capable-executor.md` | A conceptual bridge from the false-freeze finding to autonomous security-agent design: the capable executor is the false-freeze risk, the defense is a convergence gate anchored on a check the executor does not author, and an honest section on where the toy analogy breaks. Adversarially critiqued so it is not a forced analogy. |
 
 ## The argument in one paragraph
 
