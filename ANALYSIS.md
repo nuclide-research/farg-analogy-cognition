@@ -87,6 +87,37 @@ you set on purpose, and keep it exploring while it has not." The aspiration belo
 in the scaffold, not in the model's prompt. You can hold a fixed model to a higher
 standard by changing one number in the control layer.
 
+## Update: I measured it, and it corrected me (EXPERIMENT.md)
+
+Findings 2 and 3 were written from a single live sample of one model. Later I ran the
+sweep properly: four executors, three candidate-set samples each, 100 loop seeds per
+sample, both bars. The full numbers and method are in `EXPERIMENT.md`. Three things
+changed.
+
+The coarse claim held. A fluent executor false-freezes far more than the dumb scout.
+The scout sits at 47.7% `wyz` at the default bar. Every frontier model, haiku, sonnet,
+opus, sits near 20%. Swapping a dumb proposer for a capable one more than halves the
+elegant-answer rate. That is the real finding and it is robust.
+
+The monotonic version was wrong. Among the three frontier models the rate is flat,
+near 20%, not a slope. The effect saturates the moment a model is fluent enough to
+offer plausible distractor readings. "More capable, more false-freeze" is true at the
+dumb-to-fluent step and false past it.
+
+The mechanism was wrong for real models. The "far side of the wall" story is the
+scout's story. The frontier models often propose the reframe directly, so the elegant
+answer is on the menu at full coherence from the first cycle, no wall needed, and
+false-freeze still happens. The real mechanism is dilution: the elegant reading is
+out-voted by a crowd of good-enough 0.93 readings and frozen out by cooling. And the
+single-sample "0 of 40" in Finding 2 was not robust. Sampled three times, haiku sits
+at 18.7%, because whether a model proposes the reframe varies call to call.
+
+The fix held but is not sufficient. Raising the bar to 0.99 recovers `wyz`, but less
+for the capable models (45 to 70%) than for the scout (97%), and worse the wider the
+model's distractor menu. The convergence gate refuses to settle for good. It does not,
+by itself, find elegant when the executor floods the candidate set and the budget is
+finite.
+
 ## Finding 4: the cheap deterministic scaffold is where correctness lives
 
 The two real bugs I hit in this project were both in the scaffold, not the model.
@@ -126,3 +157,67 @@ to think differently. If your loop always takes the first fluent answer, you hav
 built something that is good at avoiding exactly the failures that produce insight.
 The fix is not a smarter model. It is a loop that refuses to settle for good when
 elegant is one snag away.
+
+## Related work: what this is really called
+
+The base phenomenon is not new. A search loop cools onto a locally coherent answer
+before a better one surfaces. That is **premature convergence under a cooling
+schedule**, and it is a textbook instance of the **exploration-exploitation tradeoff**.
+
+In evolutionary computation it is called premature convergence: the population loses
+the diversity it needs to keep searching and settles on a suboptimal point. In
+simulated annealing it is the quenching trap, lower the temperature too fast and the
+system freezes into a local minimum because the configuration space was not explored.
+The vocabulary of "false-freeze" is borrowed straight from there. An endogenous
+temperature falls, uphill moves get rejected, the search locks onto the current basin.
+
+The FARG/Copycat tradition is the closest mechanism. Copycat's computational
+temperature is read off the coherence of the structures built so far. It cools as the
+system finds a locally coherent answer, and cooling is commitment. The parallel
+terraced scan is the loop in which the freeze happens. Snags are the named engine of
+breakthrough: a better answer is reachable only through a conceptual block that raises
+temperature and forces open-mindedness. Marshall and Hofstadter flagged the danger in
+1996: final temperature is only a crude proxy for quality, and Copycat had no
+self-watching faculty to notice it had committed to a mediocre answer. That is
+false-freeze in all but the name, and their fix, Metacat, was to add the self-watching.
+
+The LLM literature documents the same shape. Models think too fast and make premature
+decisions, committing before the deeper signal lands. Hallucinations snowball when a
+model over-commits to an early mistake it can separately recognize as wrong. None of
+this is the contribution.
+
+**What is claimed here is the executor-capability inversion: a more capable proposer
+raises the freeze risk because it clears the local quality bar faster, never hits the
+snag that would force open-mindedness, and so cools sooner.** Be honest about novelty.
+The direction of this inversion is already documented. The literature reports premature
+confidence rising with model scale, and stronger models anchoring harder, under the
+umbrella term inverse scaling. So the directional finding is prior art. It is also not
+clean. "Think Too Fast" finds reasoning models like o1 explore better, not worse, and
+my own sweep agrees with that complication: it found no monotonic gradient among
+frontier models (see `EXPERIMENT.md`). The effect saturates at the dumb-to-fluent step
+rather than scaling with capability.
+
+What is not yet stated in that literature is the specific mechanism: an endogenous
+coherence-read temperature in an agent search loop, where the executor's own fluency
+suppresses the snag that regulates cooling. The framing ties the FARG temperature
+mechanism to the capability-scale inversion. That join is the only new part, and it is
+a framing, not a result.
+
+The defense follows in one line. Gate convergence on an external ground-truth check,
+not the model's self-grade. The freeze is dangerous because low temperature is a
+coherence proxy, not a quality measure. Replace the proxy at the commit gate and the
+snag fires when it should.
+
+### Citations
+
+- Mitchell, *Abstraction and Analogy-Making in Artificial Intelligence* (2021). https://arxiv.org/pdf/2102.10717
+- Marshall and Hofstadter, *Beyond Copycat: Incorporating Self-Watching into a Computer Model of High-Level Perception and Analogy-Making* (1996). https://science.slc.edu/jmarshall/papers/maics96.pdf
+- *Hofstadterian Architecture* (notes on FARG/Copycat snags). https://notes.fringeling.com/HofstadterianArchitecture/
+- *Premature convergence*, Wikipedia. https://en.wikipedia.org/wiki/Premature_convergence
+- *Cooling Schedule*, Phys 466, University of Illinois. https://courses.physics.illinois.edu/phys466/sp2013/projects/2001/team1/cooling.htm
+- *Multi-armed bandit*, Wikipedia. https://en.wikipedia.org/wiki/Multi-armed_bandit
+- *Large Language Models Think Too Fast To Explore Effectively*. https://arxiv.org/html/2501.18009
+- *How Language Model Hallucinations Can Snowball*. https://arxiv.org/abs/2305.13534
+- *Anchoring Bias in Large Language Models: An Experimental Study*. https://arxiv.org/html/2412.06593v1
+- *Understanding and Mitigating Premature Confidence for Better LLM Reasoning*. https://arxiv.org/abs/2605.24396
+- *Discovering Language Model Behaviors with Model-Written Evaluations*. https://arxiv.org/abs/2212.09251

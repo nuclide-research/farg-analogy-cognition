@@ -18,6 +18,7 @@ FARG-style control loop.
 | `test_farg_loop.py` | A stdlib `unittest` suite (23 tests) that freezes the adversarial verification verdict as regression tests: no hardcoded answer, the slip/opposite/reheat ablations, the canonical distribution, cross-`PYTHONHASHSEED` determinism, the freeze-bar recovery, the give-up detector, and the LLM-reply parser. |
 | `ANALYSIS.md` | The generalizable agent-design lesson distilled from building this: a more capable executor can reach a worse answer by routing around the productive failure, why that is structural, and the one-branch fix (a quality floor on convergence). |
 | `false-freeze-and-the-capable-executor.md` | A conceptual bridge from the false-freeze finding to autonomous security-agent design: the capable executor is the false-freeze risk, the defense is a convergence gate anchored on a check the executor does not author, and an honest section on where the toy analogy breaks. Adversarially critiqued so it is not a forced analogy. |
+| `experiment_capability_sweep.py` + `EXPERIMENT.md` + `experiment_results.json` | The measured follow-up: scripted / haiku / sonnet / opus through the same control law. Confirms the coarse claim (a fluent executor false-freezes far more than a dumb scout, 48% to ~20% `wyz`), falsifies the monotonic-capability version (it saturates), and corrects the mechanism for real models (dilution, not wall-dodging). The harness makes real model calls through the claude-code backend; `EXPERIMENT.md` is the write-up; the JSON is the raw data. |
 
 ## The argument in one paragraph
 

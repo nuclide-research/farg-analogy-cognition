@@ -1,0 +1,186 @@
+{
+  "K": 3,
+  "S": 100,
+  "bars": [
+    0.9,
+    0.99
+  ],
+  "results": [
+    {
+      "label": "scripted (none)",
+      "rank": 0,
+      "wyz_090": 47.7,
+      "wyz_099": 96.7,
+      "dist_090": {
+        "yyz": 74,
+        "wyz": 143,
+        "xyy": 83
+      },
+      "dist_099": {
+        "wyz": 290,
+        "xyy": 4,
+        "yyz": 6
+      },
+      "candidate_sets": [],
+      "proposes_base_rule": false,
+      "proposes_reframe": false,
+      "clean_readings_offered": [],
+      "runs_per_bar": 300
+    },
+    {
+      "label": "haiku",
+      "rank": 1,
+      "wyz_090": 18.7,
+      "wyz_099": 70.0,
+      "dist_090": {
+        "yyz": 115,
+        "xyy": 129,
+        "wyz": 56
+      },
+      "dist_099": {
+        "xyy": 52,
+        "wyz": 210,
+        "yyz": 35,
+        "null": 3
+      },
+      "candidate_sets": [
+        [
+          "(rightmost, successor)",
+          "(rightmost, predecessor)",
+          "(leftmost, successor)"
+        ],
+        [
+          "(rightmost, successor)",
+          "(rightmost, predecessor)",
+          "(leftmost, successor)"
+        ],
+        [
+          "(rightmost, successor)",
+          "(rightmost, predecessor)",
+          "(leftmost, successor)",
+          "(middle, successor)",
+          "(leftmost, predecessor)"
+        ]
+      ],
+      "proposes_base_rule": true,
+      "proposes_reframe": true,
+      "clean_readings_offered": [
+        "(leftmost, successor)",
+        "(middle, successor)",
+        "(rightmost, predecessor)"
+      ],
+      "runs_per_bar": 300
+    },
+    {
+      "label": "sonnet",
+      "rank": 2,
+      "wyz_090": 20.7,
+      "wyz_099": 45.3,
+      "dist_090": {
+        "yyz": 125,
+        "xyy": 113,
+        "wyz": 62
+      },
+      "dist_099": {
+        "xyy": 49,
+        "wyz": 136,
+        "xyz": 13,
+        "yyz": 46,
+        "xzz": 30,
+        "null": 4,
+        "xxz": 22
+      },
+      "candidate_sets": [
+        [
+          "(rightmost, successor)",
+          "(rightmost, predecessor)",
+          "(leftmost, successor)",
+          "(middle, successor)",
+          "(rightmost, identity)"
+        ],
+        [
+          "(rightmost, successor)",
+          "(rightmost, predecessor)",
+          "(leftmost, successor)",
+          "(middle, successor)",
+          "(leftmost, predecessor)"
+        ],
+        [
+          "(rightmost, successor)",
+          "(rightmost, predecessor)",
+          "(leftmost, successor)",
+          "(middle, successor)",
+          "(middle, predecessor)"
+        ]
+      ],
+      "proposes_base_rule": true,
+      "proposes_reframe": true,
+      "clean_readings_offered": [
+        "(leftmost, successor)",
+        "(middle, predecessor)",
+        "(middle, successor)",
+        "(rightmost, identity)",
+        "(rightmost, predecessor)"
+      ],
+      "runs_per_bar": 300
+    },
+    {
+      "label": "opus",
+      "rank": 3,
+      "wyz_090": 20.3,
+      "wyz_099": 51.7,
+      "dist_090": {
+        "xyy": 115,
+        "wyz": 61,
+        "yyz": 123,
+        "xyz": 1
+      },
+      "dist_099": {
+        "wyz": 155,
+        "yyz": 40,
+        "xyy": 33,
+        "xyz": 41,
+        "xzz": 27,
+        "null": 4
+      },
+      "candidate_sets": [
+        [
+          "(rightmost, successor)",
+          "(leftmost, successor)",
+          "(leftmost, predecessor)",
+          "(rightmost, predecessor)",
+          "(middle, successor)"
+        ],
+        [
+          "(rightmost, successor)",
+          "(leftmost, successor)",
+          "(rightmost, predecessor)",
+          "(middle, successor)",
+          "(leftmost, identity)"
+        ],
+        [
+          "(rightmost, successor)",
+          "(leftmost, successor)",
+          "(rightmost, predecessor)",
+          "(middle, successor)",
+          "(rightmost, identity)"
+        ]
+      ],
+      "proposes_base_rule": true,
+      "proposes_reframe": true,
+      "clean_readings_offered": [
+        "(leftmost, identity)",
+        "(leftmost, successor)",
+        "(middle, successor)",
+        "(rightmost, identity)",
+        "(rightmost, predecessor)"
+      ],
+      "runs_per_bar": 300
+    },
+    {
+      "label": "llama3.2 (local)",
+      "rank": null,
+      "error": "empty model reply on sample 0 (call failed)"
+    }
+  ]
+}
