@@ -1,0 +1,14 @@
+# Conversation exports (contain full session/profile dumps - never commit)
+*.txt
+FARG-Kloster.txt
+2026-*-local-command-*.txt
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# Editor / OS
+.DS_Store
+*.swp
