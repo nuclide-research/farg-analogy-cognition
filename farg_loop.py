@@ -90,11 +90,15 @@ OPPOSITES = {"rightmost": "leftmost", "leftmost": "rightmost",
              "first": "last", "last": "first"}
 
 class Slipnet:
-    def __init__(self):
+    def __init__(self, opposites=None):
         # activation in [0,1]; depth in [0,1] (deep -> slow decay, Topic 1 step 1)
         self.activation = {"opposite": 0.0}
         self.depth = {"opposite": 0.90}      # `opposite` is an abstract, deep concept
         self.SLIP_THRESHOLD = 0.50           # link is "short enough" to slip above this
+        # the slip vocabulary. Defaults to the letter domain's OPPOSITES; a second
+        # domain (see domain_music.py) injects its own map, so slip() is domain-generic
+        # without the control loop knowing which domain it is driving.
+        self.opp = OPPOSITES if opposites is None else opposites
 
     def bump(self, concept: str, amount: float = 1.0):
         self.activation[concept] = min(1.0, self.activation.get(concept, 0.0) + amount)
@@ -108,8 +112,8 @@ class Slipnet:
         """Return the opposite-linked concept IFF `opposite` is activated past the
         threshold; otherwise the concept stands. This is the whole reframing
         primitive. It consults state; it does not know about any answer."""
-        if concept in OPPOSITES and self.activation.get("opposite", 0.0) >= self.SLIP_THRESHOLD:
-            return OPPOSITES[concept]
+        if concept in self.opp and self.activation.get("opposite", 0.0) >= self.SLIP_THRESHOLD:
+            return self.opp[concept]
         return concept
 
 # ----------------------------------------------------------------------------
@@ -168,6 +172,11 @@ class Problem:
     s0: str; s1: str; target: str
     base_rule: Rule = field(init=False)
     def __post_init__(self): self.base_rule = infer_rule(self.s0, self.s1)
+    def coherence(self, rule: Rule):
+        """Domain hook used by solve(); delegates to this domain's critic. A second
+        domain provides its own coherence() with the same (c, result, snag) contract,
+        so solve() never needs to know which domain it is scoring."""
+        return coherence_of(rule, self)
 
 def rule_support(rule: Rule, base: Rule) -> float:
     """Reward (a) keeping the ORIGINAL change's shape (an end position + a
@@ -254,10 +263,12 @@ class ScriptedProposer:
 _VALID_POS = {"leftmost", "rightmost", "middle"}
 _VALID_OP = {"successor", "predecessor", "identity"}
 
-def _parse_rules(raw: str) -> list[Rule]:
+def _parse_rules(raw: str, valid_pos=_VALID_POS, valid_op=_VALID_OP) -> list[Rule]:
     """Parse a model reply into VALIDATED Rule objects. Pull the first JSON array,
     keep only entries whose (pos, op) are in the legal vocabulary, dedup. Anything
-    malformed is silently dropped - the control layer is never fed an illegal rule."""
+    malformed is silently dropped - the control layer is never fed an illegal rule.
+    The valid_pos/valid_op sets default to the letter domain's vocabulary; a second
+    domain passes its own op set (e.g. up/down/same) so the same parser serves it."""
     import json, re
     if not raw:
         return []
@@ -272,7 +283,7 @@ def _parse_rules(raw: str) -> list[Rule]:
             continue
         pos = str(item.get("pos", "")).strip().lower()
         op = str(item.get("op", "")).strip().lower()
-        if pos in _VALID_POS and op in _VALID_OP:
+        if pos in valid_pos and op in valid_op:
             r = Rule(pos, op)
             if r not in seen:
                 seen.add(r); out.append(r)
@@ -355,16 +366,22 @@ class LLMProposer:
         "ordered most-natural first, 1 to 5 rules. No prose."
     )
 
-    def __init__(self, client, *, scaffold: bool = True, verbose: bool = False):
+    def __init__(self, client, *, scaffold: bool = True, verbose: bool = False,
+                 prompt: str | None = None, valid_op=None):
         self.client = client          # callable: prompt -> completion text
         self.scaffold = scaffold      # keep the deterministic control-layer floor
         self.verbose = verbose
+        # prompt template + legal op set default to the letter domain; a second domain
+        # passes its own (e.g. domain_music.MUSIC_PROMPT, {up,down,same}) to reuse this
+        # exact proposer, cache, and scaffold-union logic against a different surface.
+        self.prompt_tmpl = prompt or self.PROMPT
+        self.valid_op = valid_op or _VALID_OP
         self._cache: dict[str, str] = {}
         self.last_raw: str | None = None
         self.last_parsed: list[Rule] = []
 
     def propose(self, prob: Problem, net: Slipnet) -> list[Rule]:
-        prompt = self.PROMPT.format(s0=prob.s0, s1=prob.s1, t0=prob.target)
+        prompt = self.prompt_tmpl.format(s0=prob.s0, s1=prob.s1, t0=prob.target)
         if prompt not in self._cache:
             try:
                 self._cache[prompt] = self.client(prompt)
@@ -374,7 +391,7 @@ class LLMProposer:
                     print(f"  [LLM error: {e}; falling back to scaffold]")
         raw = self._cache[prompt]
         self.last_raw = raw
-        cands = _parse_rules(raw)
+        cands = _parse_rules(raw, valid_op=self.valid_op)
         self.last_parsed = list(cands)
         if self.scaffold:                         # union the deterministic floor in
             for r in ScriptedProposer().propose(prob, net):
@@ -403,18 +420,18 @@ def solve(prob: Problem, proposer=None, seed=0, max_cycles=40, verbose=False,
           freeze_bar=0.90, T_freeze=0.15, T_search=0.45, max_snags=6):
     rng = random.Random(seed)
     proposer = proposer or ScriptedProposer()
-    net, ws, temp = Slipnet(), Workspace(), Temperature()
+    net, ws, temp = Slipnet(getattr(prob, "opposites", None)), Workspace(), Temperature()
     last_clean, stable, consec_snags = None, 0, 0
     trace = []
 
     for cycle in range(1, max_cycles + 1):
         cands = proposer.propose(prob, net)
-        scored = [(r, coherence_of(r, prob)) for r in cands]
+        scored = [(r, prob.coherence(r)) for r in cands]
         # choose a candidate by coherence, softmax-sharpened by the CURRENT temperature
         items = [r for r, _ in scored]
         cvals = [c for _, (c, _, _) in scored]
         chosen = softmax_choice(items, cvals, temp.tau(), rng)
-        c, result, snag = coherence_of(chosen, prob)
+        c, result, snag = prob.coherence(chosen)
 
         if snag:                                         # SNAG path
             ws.retract()

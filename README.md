@@ -19,6 +19,9 @@ FARG-style control loop.
 | `ANALYSIS.md` | The generalizable agent-design lesson distilled from building this: a more capable executor can reach a worse answer by routing around the productive failure, why that is structural, and the one-branch fix (a quality floor on convergence). |
 | `false-freeze-and-the-capable-executor.md` | A conceptual bridge from the false-freeze finding to autonomous security-agent design: the capable executor is the false-freeze risk, the defense is a convergence gate anchored on a check the executor does not author, and an honest section on where the toy analogy breaks. Adversarially critiqued so it is not a forced analogy. |
 | `experiment_capability_sweep.py` + `EXPERIMENT.md` + `experiment_results.json` | The measured follow-up: scripted / haiku / sonnet / opus through the same control law. Confirms the coarse claim (a fluent executor false-freezes far more than a dumb scout, 48% to ~20% `wyz`), falsifies the monotonic-capability version (it saturates), and corrects the mechanism for real models (dilution, not wall-dodging). The harness makes real model calls through the claude-code backend; `EXPERIMENT.md` is the write-up; the JSON is the raw data. |
+| `domain_music.py` | A SECOND surface domain (diatonic melody) that drives the SAME imported `solve` / `ScriptedProposer` / `Temperature` unchanged. `C-D-E -> C-D-F ; G-A-B -> ?` walls on the register ceiling (no note above B) and double-slips to `F-A-B`, the exact analog of `xyz -> wyz`. The control loop never learns which domain it drives. |
+| `test_domain_music.py` | A stdlib `unittest` suite (20 tests) for the music domain: not-rigged, opposite-gated emergence, the symmetric mirror case, the register walls, the freeze-bar recovery, and the load-bearing cross-domain checks (`M.solve is F.solve`, and the scripted distribution matches the letter domain to the count). |
+| `experiment_domain_transfer.py` + `DOMAINS.md` + `domain_transfer_results.json` | The measured transfer test. Part A shows the loop is surface-blind (letters and melody both 47.7% elegant at the default bar, identical to the count). Part B runs a real model on both domains and confirms the false-freeze reproduces in both (model far below the scout, recovered by raising the bar). `DOMAINS.md` is the write-up. |
 
 ## The argument in one paragraph
 
@@ -60,11 +63,31 @@ temperature flatlines low.
 python3 farg_loop.py --plot
 ```
 
-To run the test suite (stdlib only, no network, no model):
+To run the test suites (stdlib only, no network, no model):
 
 ```
-python3 -m unittest test_farg_loop -v
+python3 -m unittest test_farg_loop -v        # 23 tests, letter domain
+python3 -m unittest test_domain_music -v     # 20 tests, melody domain
 ```
+
+### A second domain: diatonic melody
+
+The control law is not specific to letters. `domain_music.py` is a second surface domain
+that imports `solve`, `ScriptedProposer`, and `Temperature` from `farg_loop` and drives
+them unchanged, supplying only a 7-note scale with a register ceiling for the wall:
+
+```
+python3 domain_music.py                  # C-D-E -> C-D-F ; G-A-B -> ?  reframes to F-A-B
+python3 experiment_domain_transfer.py    # does the false-freeze reproduce here? (yes)
+```
+
+The melody `G-A-B` ascends into the ceiling note `B`, which has no diatonic note above
+it in the register. That is the same wall `z` is in the letter domain. The base rule
+snags on it, the `opposite` concept activates, and the loop double-slips to `F-A-B`, the
+note-for-note analog of `xyz -> wyz`. Because the loop cannot see the surface, the
+scripted distribution is identical to the letter domain to the count. The measured
+transfer (a real model false-freezes in both domains, recovered by raising the bar) is
+written up in [`DOMAINS.md`](DOMAINS.md).
 
 ### Running with a real model as the executor
 

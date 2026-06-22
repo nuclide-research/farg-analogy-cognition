@@ -1,0 +1,91 @@
+{
+  "K": 3,
+  "S": 100,
+  "bars": [
+    0.9,
+    0.99
+  ],
+  "model": "haiku",
+  "domains": {
+    "letters": {
+      "elegant": "wyz",
+      "scout_090": 47.7,
+      "scout_099": 96.7,
+      "model_090": 3.7,
+      "model_099": 41.3,
+      "candidate_sets": [
+        [
+          "(rightmost, successor)",
+          "(rightmost, predecessor)",
+          "(leftmost, successor)",
+          "(middle, successor)"
+        ],
+        [
+          "(rightmost, successor)",
+          "(rightmost, predecessor)",
+          "(leftmost, successor)"
+        ],
+        [
+          "(rightmost, successor)",
+          "(leftmost, successor)",
+          "(rightmost, predecessor)",
+          "(middle, successor)"
+        ]
+      ],
+      "dist_090": {
+        "yyz": 160,
+        "xyy": 129,
+        "wyz": 11
+      },
+      "dist_099": {
+        "xyy": 68,
+        "wyz": 124,
+        "xzz": 31,
+        "yyz": 71,
+        "null": 6
+      }
+    },
+    "melody": {
+      "elegant": "F A B",
+      "scout_090": 47.7,
+      "scout_099": 96.7,
+      "model_090": 18.3,
+      "model_099": 56.7,
+      "candidate_sets": [
+        [
+          "(rightmost, up)",
+          "(rightmost, down)",
+          "(leftmost, up)",
+          "(middle, up)"
+        ],
+        [
+          "(rightmost, up)",
+          "(rightmost, down)",
+          "(leftmost, up)",
+          "(middle, up)"
+        ],
+        [
+          "(rightmost, down)",
+          "(middle, up)",
+          "(leftmost, up)",
+          "(middle, down)",
+          "(leftmost, down)"
+        ]
+      ],
+      "dist_090": {
+        "A A B": 123,
+        "G A A": 122,
+        "F A B": 55
+      },
+      "dist_099": {
+        "G A A": 49,
+        "F A B": 170,
+        "G B B": 31,
+        "A A B": 47,
+        "null": 2,
+        "G G B": 1
+      }
+    }
+  },
+  "transfers": true
+}
